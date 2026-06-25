@@ -20,7 +20,7 @@ with DAG(
     dag_id="hello_world",
     description="Печатает 'hello world' каждые 5 минут",
     default_args=default_args,
-    schedule="*/5 * * * *",
+    schedule="*/6 * * * *",
     start_date=datetime(2026, 1, 1),
     catchup=False,
     tags=["example"],
