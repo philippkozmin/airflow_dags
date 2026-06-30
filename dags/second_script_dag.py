@@ -8,10 +8,16 @@ from airflow.operators.python import PythonOperator
 
 def print_hello():
     print("hello world. I am second script")
+    # Возвращаемое значение автоматически кладётся в XCom (ключ "return_value")
+    status = "success"
+    return status
 
 
-def print_second_part():
+def print_second_part(ti):
     print("hello world. I am second part of second script")
+    # Забираем статус первого оператора из XCom
+    status = ti.xcom_pull(task_ids="print_hello")
+    print(f"status from print_hello: {status}")
 
 
 default_args = {
