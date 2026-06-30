@@ -10,6 +10,10 @@ def print_hello():
     print("hello world. I am second script")
 
 
+def print_second_part():
+    print("hello world. I am second part of second script")
+
+
 default_args = {
     "owner": "airflow",
     "retries": 1,
@@ -29,3 +33,11 @@ with DAG(
         task_id="print_hello",
         python_callable=print_hello,
     )
+
+    second_part_task = PythonOperator(
+        task_id="print_second_part",
+        python_callable=print_second_part,
+    )
+
+    # Второй оператор запускается только при успешном выполнении первого
+    hello_task >> second_part_task
