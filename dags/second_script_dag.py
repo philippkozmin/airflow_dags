@@ -14,10 +14,9 @@ def print_hello():
 
 
 def print_second_part(ti):
-    print("hello world. I am second part of second script")
-    # Забираем статус первого оператора из XCom
+    # Забираем статус первого оператора из XCom (ключ по умолчанию "return_value")
     status = ti.xcom_pull(task_ids="print_hello")
-    print(f"status from print_hello: {status}")
+    print(f"hello world. I am second part of second script. status of first operator={status}")
 
 
 default_args = {
