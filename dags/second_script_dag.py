@@ -6,16 +6,15 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 
-def print_hello():
+def print_hello(ti):
     print("hello world. I am second script")
-    # Возвращаемое значение автоматически кладётся в XCom (ключ "return_value")
-    status = "success"
-    return status
+    # Явно кладём статус в XCom через xcom_push
+    ti.xcom_push(key="status", value="success")
 
 
 def print_second_part(ti):
-    # Забираем статус первого оператора из XCom (ключ по умолчанию "return_value")
-    status = ti.xcom_pull(task_ids="print_hello")
+    # Забираем статус первого оператора из XCom по ключу "status"
+    status = ti.xcom_pull(task_ids="print_hello", key="status")
     print(f"hello world. I am second part of second script. status of first operator={status}")
 
 
