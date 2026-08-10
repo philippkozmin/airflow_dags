@@ -1,12 +1,11 @@
 """Тестовый DAG с production-подобным графом для проверки Airflow UI."""
 
 import time
-from datetime import datetime, timezone
 
-from airflow import DAG
-from airflow.operators.empty import EmptyOperator
-from airflow.operators.python import PythonOperator
-from airflow.utils.task_group import TaskGroup
+import pendulum
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG, TaskGroup
 
 DATA_SOURCES = ("customers", "orders", "payments", "products")
 QUALITY_CHECKS = ("completeness", "freshness", "consistency")
@@ -22,7 +21,7 @@ with DAG(
     dag_id="parallel_steps",
     description="Production-подобный UI smoke-test с параллельными группами",
     schedule=None,
-    start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,
     max_active_runs=1,
     tags=["example", "parallel", "ui-test"],
