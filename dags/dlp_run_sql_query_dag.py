@@ -2,22 +2,17 @@
 
 Каждые 5 минут выполняет сохранённый SQL-запрос 1wi4zefzkq2ck (preprod:
 SELECT * FROM "dlback-test-catalog-10".system.iceberg_tables
-WHERE table_name = {{tableName}} LIMIT 100) через лежащий рядом SDK-модуль
-dlp_sdk (RPC runSqlQuery, окружение preprod, org yc.organization-manager.sandbox)
-с параметром tableName=shops. Таск логирует статус выполнения
-(executed_query.status) и события-строки результата, а в XCom уходит число
-строк ответа (dlp_sdk.count_result_rows).
+WHERE table_name = {{tableName}} LIMIT 100) с параметром tableName=shops
+через лежащий рядом SDK-модуль dlp_sdk (RPC runSqlQuery, окружение preprod,
+org yc.organization-manager.sandbox). Таск логирует статус выполнения
+(executed_query.status) и события-строки результата, в XCom уходит число строк.
 
-IAM-токен сервисного аккаунта airflowsa получается в рантайме вызовом
-dlp_sdk.get_iam_token() (yc CLI + authorized key) и передаётся в
-dlp_sdk.run_sql_query явным параметром iam_token — временное решение,
-отмеченное пользователем.
-
-ВАЖНО: токен сервисного аккаунта airflowsa пока не лицензирован в DLP,
-поэтому до выдачи лицензии таск будет падать с 401/403 от API — это
-ожидаемое поведение, а не ошибка DAG. Authorized key лежит вне репозитория:
-/Users/philippkozmin/github/dlp-demo/authorized_key.json. Секреты в коде,
-конфигурацию DAG и логи не пишутся.
+IAM-токен сервисного аккаунта airflowsa записан ниже явной константой IAM_TOKEN
+и передаётся в dlp_sdk.run_sql_query явным параметром iam_token — ВРЕМЕННОЕ
+решение по решению пользователя: токен живёт не более 12 часов, после чего его
+надо перевыпускать и обновлять здесь (в будущем заменим на получение в рантайме).
+ВАЖНО: пока у airflowsa нет лицензии DLP, API отвечает 401/403 — это ожидаемое
+поведение, а не ошибка DAG.
 """
 
 import logging
@@ -32,22 +27,24 @@ logger = logging.getLogger(__name__)
 
 SQL_QUERY_ID = "1wi4zefzkq2ck"
 TABLE_NAME = "shops"
+IAM_TOKEN = "t1.9euelZqbjJiej4mQmY_Ok5SUlMuble3rnpWaiseZzpSVk4yeyomck8ySisvl8_cfFWkr-e8HdxNv_d3z919DZiv57wd3E2_91eL17Iac0ZCeiouX0Y-KnZOWnNKMm5Tt-ZCPmpGWm83n9euelZqaxsqbmJGOkY7PlMuKl8fOke_8xeuelZqaxsqbmJGOkY7PlMuKl8fOkb3rnpWalYzIy46KkZqbnc2UlM6OjI6164ac0ZaektGQj5qRlpvSjJqNiZqN.tu98IAtE8e0sS8_lFaLOnYU7DZMPtFge-r1O5JFGiLbYQb8VAtLBNbhmAVtsrMG0Fozv2WQQGh4hOc8fp0sLDw"
 
 
 def run_sql_query():
-    iam_token = dlp_sdk.get_iam_token()
     response = dlp_sdk.run_sql_query(
         SQL_QUERY_ID,
         {"tableName": TABLE_NAME},
-        iam_token=iam_token,
+        iam_token=IAM_TOKEN,
     )
     executed_query = response.get("executed_query") or response.get("executedQuery") or {}
     logger.info("status: %s", executed_query.get("status"))
+    rows = 0
     for result in response.get("results") or []:
         for event in result.get("events") or []:
             if event.get("event") == "row":
+                rows += 1
                 logger.info("row: %s", event)
-    return dlp_sdk.count_result_rows(response)
+    return rows
 
 
 default_args = {
