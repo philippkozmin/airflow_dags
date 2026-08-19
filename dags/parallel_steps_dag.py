@@ -7,7 +7,7 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import DAG, TaskGroup
 
-DATA_SOURCES = ("customers", "orders", "payments", "products")
+DATA_SOURCES = ("customers", "payments", "products", "orders")
 QUALITY_CHECKS = ("completeness", "freshness", "consistency")
 STEP_DURATION_SECONDS = 3
 
