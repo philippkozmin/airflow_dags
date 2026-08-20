@@ -7,17 +7,18 @@ WHERE table_name = {{tableName}} LIMIT 100) с параметром tableName=sh
 org yc.organization-manager.sandbox). Таск логирует статус выполнения
 (executed_query.status) и события-строки результата, в XCom уходит число строк.
 
-IAM-токен сервисного аккаунта airflowsa записан ниже явной константой IAM_TOKEN
-и передаётся в dlp_sdk.run_sql_query явным параметром iam_token — ВРЕМЕННОЕ
-решение по решению пользователя: токен живёт не более 12 часов, после чего его
-надо перевыпускать и обновлять здесь (в будущем заменим на получение в рантайме).
-ВАЖНО: пока у airflowsa нет лицензии DLP, API отвечает 401/403 — это ожидаемое
-поведение, а не ошибка DAG.
+IAM-токен получается в рантайме на воркере Managed Airflow от сервисного
+аккаунта, привязанного к кластеру (документация: managed-airflow/operations/
+get-iam-token): yandexcloud.SDK()._channels._token_requester.get_token() —
+и передаётся в dlp_sdk.run_sql_query явным параметром iam_token. Пакет
+yandexcloud предустановлен на воркерах Managed Airflow. Статических токенов
+в коде нет.
 """
 
 import logging
 from datetime import datetime, timedelta
 
+import yandexcloud
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
@@ -27,14 +28,19 @@ logger = logging.getLogger(__name__)
 
 SQL_QUERY_ID = "1wi4zefzkq2ck"
 TABLE_NAME = "shops"
-IAM_TOKEN = "t1.9eudmZ2RzJXOx5iKl8rGlomLlp6My-3rnZmdlJqSj56cioyUjsrGi5CWlcnl9Pd2S2gr-e8tDy2L3fT3NnplK_nvLQ8ti83n9eudmZ2dm5GekIzMysnNmIuXjsmPmu_8zef1652ZnZ2UmcqOz82XzpWUm5PPk4zH7_3F652ZnZ2bkZ6QjMzKyc2Yi5eOyY-a.iEv8R8IbuX_PqfS54EGnABOnaTS5i7MPufCEG04-_Q-MkGLzwL20XDruNYgyo914sK03yiNpAG7XoUWMXCk0AA"
+
+
+def get_iam_token():
+    """IAM-токен сервисного аккаунта кластера Managed Airflow (runtime)."""
+    sdk = yandexcloud.SDK()
+    return sdk._channels._token_requester.get_token()
 
 
 def run_sql_query():
     response = dlp_sdk.run_sql_query(
         SQL_QUERY_ID,
         {"tableName": TABLE_NAME},
-        iam_token=IAM_TOKEN,
+        iam_token=get_iam_token(),
     )
     executed_query = response.get("executed_query") or response.get("executedQuery") or {}
     logger.info("status: %s", executed_query.get("status"))
