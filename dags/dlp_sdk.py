@@ -1,7 +1,5 @@
 """Тонкая обёртка над DLP RPC API: выполняет сохранённый SQL-запрос.
-
-Импортируется DAG'ом dags/dlp_run_sql_query_dag.py: принимает параметры вызова,
-делает POST {base}/rpc/runSqlQuery и возвращает ответ API. Только stdlib.
+Делает POST {base}/rpc/runSqlQuery и возвращает ответ API.
 """
 
 import json
