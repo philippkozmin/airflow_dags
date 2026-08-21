@@ -4,14 +4,9 @@
 перезагрузка партиции marts.mart_orders) с параметром launch_date — датой
 запуска (логической датой) DAG в текстовом формате dd-mm-yyyy (%d-%m-%Y) —
 через лежащий рядом SDK-модуль dlp_sdk (RPC runSqlQuery, окружение preprod,
-org yc.organization-manager.sandbox).
-
-Запрос заведомо возвращает от Trino целевую (ожидаемую) ошибку
-DB.INVALID_QUERY / SYNTAX_ERROR («mismatched input ';'» на первом стейтменте
-DROP TABLE ...). Для этого DAG такая ошибка — УСПЕХ таска: логируются код
-ошибки, db_message и query_id. Провалом таска считаются только
-транспортные/HTTP-ошибки (включая 401/403), ошибка валидации RPC, ответ вовсе
-без results/executed_query или ошибка, не похожая на целевую.
+org yc.organization-manager.sandbox). Таск логирует статус выполнения
+(executed_query.status) и события-строки результата, в XCom уходит число строк.
+Ошибка запроса (например, DB.INVALID_QUERY от Trino) — обычное падение таска.
 
 IAM-токен получается в рантайме на воркере Managed Airflow от сервисного
 аккаунта, привязанного к кластеру (документация: managed-airflow/operations/
@@ -35,28 +30,11 @@ logger = logging.getLogger(__name__)
 
 SQL_QUERY_ID = "0wuiid112l4uj"
 
-# Целевая (ожидаемая) ошибка запроса: Trino SYNTAX_ERROR на первом стейтменте.
-TARGET_ERROR_CODE = "DB.INVALID_QUERY"
-TARGET_DB_MESSAGE_MARKER = "mismatched input ';'"
-TARGET_ERROR_NAME = "SYNTAX_ERROR"
-
 
 def get_iam_token():
     """IAM-токен сервисного аккаунта кластера Managed Airflow (runtime)."""
     sdk = yandexcloud.SDK()
     return sdk._channels._token_requester.get_token()
-
-
-def _is_target_error(error):
-    """Похожа ли ошибка результата на целевую (DB.INVALID_QUERY / SYNTAX_ERROR)."""
-    if error.get("code") == TARGET_ERROR_CODE:
-        return True
-    details = error.get("details") or {}
-    debug = error.get("debug") or {}
-    db_messages = (error.get("db_message"), details.get("db_message"), debug.get("db_message"))
-    if any(message and TARGET_DB_MESSAGE_MARKER in message for message in db_messages):
-        return True
-    return details.get("error_name") == TARGET_ERROR_NAME
 
 
 def run_sql_query(**context):
@@ -67,49 +45,18 @@ def run_sql_query(**context):
         {"launch_date": launch_date},
         iam_token=get_iam_token(),
     )
-    executed_query = response.get("executed_query") or response.get("executedQuery") or {}
-    results = response.get("results") or []
-    errors = [result["error"] for result in results if result.get("error")]
-
-    target_errors = [error for error in errors if _is_target_error(error)]
-    if target_errors:
-        # Целевая (ожидаемая) ошибка — таск завершается успехом.
-        for error in target_errors:
-            details = error.get("details") or {}
-            db_message = details.get("db_message") or (error.get("debug") or {}).get("db_message")
-            logger.info(
-                "target (expected) error: code=%s db_message=%s query_id=%s",
-                error.get("code"),
-                db_message,
-                details.get("query_id"),
-            )
-        return {
-            "launch_date": launch_date,
-            "target_error": True,
-            "error_code": target_errors[0].get("code"),
-            "query_id": (target_errors[0].get("details") or {}).get("query_id"),
-            "executed_query_id": executed_query.get("id"),
-        }
-
-    if not results and not executed_query:
-        raise AirflowException(f"неожиданный ответ DLP API без results/executed_query: {response!r}")
-
+    errors = [result["error"] for result in response.get("results") or [] if result.get("error")]
     if errors:
-        # Ошибка есть, но не похожа на целевую — это провал таска.
-        raise AirflowException(f"запрос завершился нецелевой ошибкой: {errors!r}")
-
-    # Ошибок нет: запрос выполнился успешно (не как ожидалось) — предупреждаем.
-    logger.warning(
-        "запрос выполнился без ожидаемой целевой ошибки %s (executed_query.status=%s)",
-        TARGET_ERROR_CODE,
-        executed_query.get("status"),
-    )
+        raise AirflowException(f"запрос завершился ошибкой: {errors!r}")
+    executed_query = response.get("executed_query") or response.get("executedQuery") or {}
+    logger.info("status: %s", executed_query.get("status"))
     rows = 0
-    for result in results:
+    for result in response.get("results") or []:
         for event in result.get("events") or []:
             if event.get("event") == "row":
                 rows += 1
-    return {"launch_date": launch_date, "target_error": False, "rows": rows}
+                logger.info("row: %s", event)
+    return rows
 
 
 default_args = {
