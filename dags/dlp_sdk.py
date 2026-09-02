@@ -16,7 +16,7 @@ import urllib.request
 logger = logging.getLogger(__name__)
 
 ORG_ID = "yc.organization-manager.sandbox"
-API_BASE_URLS = {"prod": "https://api.datalens.tech", "preprod": "https://api.preprod.datalens.tech"}
+API_BASE_URLS = {"prod": "https://api.datalens.tech", "preprod": "https://api.preprod.datalens.tech:20197"}
 
 
 def _resolve_host(url):
