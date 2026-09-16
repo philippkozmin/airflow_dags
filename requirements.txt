@@ -1,0 +1,6 @@
+pyspark==3.5.7
+grpcio>=1.48.1
+pandas
+pyarrow
+googleapis-common-protos
+grpcio-status
