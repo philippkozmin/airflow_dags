@@ -26,8 +26,8 @@
                      с подтверждением статуса по listSparkJobs (джоба не
                      остаётся работать ни при каком исходе).
 
-RPC-вызовы к DLP API (preprod: api.preprod.datalens.tech, при недоступности —
-тот же хост на порту 20197, как в dlp_sdk.py; org
+RPC-вызовы к DLP API (preprod: https://api.preprod.datalens.tech:20197 —
+порт 20197 обязателен из сети воркера Managed Airflow; org
 yc.organization-manager.sandbox) делает stdlib urllib.request, как в dlp_sdk;
 requests/pyspark на этапе оркестрации не используются. IAM-токен получается
 в рантайме на воркере от сервисного аккаунта кластера
@@ -56,10 +56,11 @@ CATALOG_ID = "bu6cinhpkq0jsb0p1aop"           # dlback-test-catalog-10
 JOB_NAME = "ab-test-daily"                    # [a-z][-a-z0-9]{1,62}[a-z0-9]
 BOOTSTRAP_ITERS = int(os.getenv("AB_BOOTSTRAP_ITERS", "1000"))
 
-# Base DLP API (preprod): первичен проверенный base из брифа (443), fallback —
-# порт 20197 (конвенция dlp_sdk.py, актуальная из сети воркера YC). Рабочий
-# base запоминается после первого успешного вызова. Override: AB_DLP_API_BASE.
-API_BASE_FALLBACK = ["https://api.preprod.datalens.tech", "https://api.preprod.datalens.tech:20197"]
+# Base DLP API (preprod): из сети воркера Managed Airflow API доступен на порту
+# 20197 — он первичен (https://api.preprod.datalens.tech:20197). Base 443 —
+# запасной (работает извне, например с ноутбука). Рабочий base запоминается
+# после первого успешного вызова. Override: AB_DLP_API_BASE.
+API_BASE_FALLBACK = ["https://api.preprod.datalens.tech:20197", "https://api.preprod.datalens.tech"]
 ORG_ID = "yc.organization-manager.sandbox"
 
 SESSION_WAIT_SEC = 600   # ~10 мин на подъём SparkConnect-джобы
