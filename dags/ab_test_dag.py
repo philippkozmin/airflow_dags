@@ -8,8 +8,10 @@
 
 Таски (последовательная логика, PythonOperator):
   create_session   — IAM-токен → DLP RPC createSparkJob (имя ab-test-daily,
-                     каталог bu6cinhpkq0jsb0p1aop аттачится к джобе и становится
-                     defaultCatalog) → поллинг getLakehouseOperation и
+                      каталог bu6cinhpkq0jsb0p1aop аттачится к джобе и становится
+                      defaultCatalog); в лог пишется createdBy операции и джобы —
+                      id DLP-пользователя, от имени которого выполняются запросы
+                      (сам токен в лог не пишется); далее поллинг
                      listSparkJobs до connectUrl (таймаут ~10 мин, повторы
                      сетевых вызовов); jobId+connectUrl уходят в XCom. Перед
                      созданием гасит висящие джобы с тем же именем
@@ -202,7 +204,8 @@ def create_session(**context):
         iam_token,
     )
     operation_id = operation.get("id") if isinstance(operation, dict) else None
-    logger.info("createSparkJob: operation=%s done=%s", operation_id, operation.get("done"))
+    logger.info("createSparkJob: operation=%s done=%s createdBy=%s (DLP user id, от имени которого Airflow выполняет запросы)",
+                operation_id, operation.get("done"), operation.get("createdBy"))
 
     # 2) поллинг операции до done, затем listSparkJobs до connectUrl
     deadline = time.time() + SESSION_WAIT_SEC
@@ -215,8 +218,8 @@ def create_session(**context):
         for job in _live_jobs(_list_jobs(iam_token)):
             connect_url = job.get("connectUrl")
             if connect_url:
-                logger.info("session ready: jobId=%s status=%s connectUrl=%s",
-                            job.get("id"), job.get("status"), connect_url)
+                logger.info("session ready: jobId=%s status=%s createdBy=%s connectUrl=%s",
+                            job.get("id"), job.get("status"), job.get("createdBy"), connect_url)
                 return {"jobId": job["id"], "connectUrl": connect_url}
         time.sleep(POLL_INTERVAL_SEC)
     raise TimeoutError(f"SparkConnect session {JOB_NAME!r} not ready in {SESSION_WAIT_SEC}s")
