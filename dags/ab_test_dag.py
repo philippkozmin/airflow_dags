@@ -22,9 +22,12 @@
                      несовместимости версии Python — stdlib-fallback),
                      делает CTAS + read-back и печатает AB_RESULT_JSON=...;
                      метрики логируются и уходят в XCom;
-  teardown_session — trigger_rule=all_done: cancelSparkJob джобы из XCom,
-                     с подтверждением статуса по listSparkJobs (джоба не
-                     остаётся работать ни при каком исходе).
+  teardown_session — trigger_rule=all_done, ЛИСТОВОЙ таск: cancelSparkJob
+                      джобы из XCom с подтверждением статуса + пропагация
+                      падений: если любая другая таска запускаа зафейлилась,
+                      teardown роняет и себя => DagRun получает статус error
+                      (иначе успешный leaf на all_done «прощал» бы сбои и даг
+                      становился SUCCESS);
 
 RPC-вызовы к DLP API (preprod: https://api.preprod.datalens.tech:20197 —
 порт 20197 обязателен из сети воркера Managed Airflow; org
@@ -47,6 +50,7 @@ from datetime import datetime, timedelta
 
 import yandexcloud
 from airflow import DAG
+from airflow.exceptions import AirflowException
 from airflow.operators.python import PythonOperator
 
 logger = logging.getLogger(__name__)
@@ -300,28 +304,54 @@ def run_ab_analysis(**context):
     return summary
 
 
-def teardown_session(**context):
-    """Таск 3 (all_done): погасить SparkConnect-джобу и подтвердить статус."""
-    ti = context["ti"]
-    session = ti.xcom_pull(task_ids="create_session")
-    if not session:
-        logger.info("no session in XCom — nothing to tear down")
-        return
-    job_id = session["jobId"]
-    iam_token = get_iam_token()
-    logger.info("cancelling SparkConnect job %s ...", job_id)
-    operation = dlp_rpc("cancelSparkJob", {"clusterId": CLUSTER_ID, "jobId": job_id}, iam_token)
-    logger.info("cancelSparkJob: operation=%s done=%s",
-                operation.get("id") if isinstance(operation, dict) else None,
-                operation.get("done") if isinstance(operation, dict) else None)
+def _fail_if_siblings_failed(ti):
+    """Уронить leaf-таск (и вместе с ним весь DagRun → error), если любая другая
+    таска этого запуска зафейлилась.
 
-    # подтверждение: джоба должна стать терминальной (CANCELLED)
-    _wait_jobs_gone(iam_token, [{"id": job_id}], CANCEL_WAIT_SEC, "teardown")
-    for job in _list_jobs(iam_token):
-        if job.get("id") == job_id:
-            logger.info("teardown confirmed: job %s status=%s", job_id, job.get("status"))
+    Без этого успешный leaf-таск на trigger_rule=all_done «прощал» бы падения
+    апстримов: Airflow выводит статус DagRun по листовым таскам, и teardown,
+    отработавший cleanup, пометил бы запуск SUCCESS. Пропагация ошибки через
+    лист гарантирует: любая упавшая таска => даг в статусе error."""
+    from airflow.utils.state import TaskInstanceState
+
+    failed = [
+        t.task_id
+        for t in ti.get_dagrun().get_task_instances()
+        if t.task_id != ti.task_id and t.state == TaskInstanceState.FAILED
+    ]
+    if failed:
+        raise AirflowException(
+            "DAG AB_test завершён с ошибкой — упали таски: " + ", ".join(sorted(failed))
+        )
+
+
+def teardown_session(**context):
+    """Таск 3 (all_done, листовой): погасить SparkConnect-джобу, подтвердить
+    статус и пропагировать падение любой таски в статус дага (error)."""
+    ti = context["ti"]
+    try:
+        session = ti.xcom_pull(task_ids="create_session")
+        if not session:
+            logger.info("no session in XCom — nothing to tear down")
             return
-    logger.warning("teardown: job %s not found in listSparkJobs (treated as gone)", job_id)
+        job_id = session["jobId"]
+        iam_token = get_iam_token()
+        logger.info("cancelling SparkConnect job %s ...", job_id)
+        operation = dlp_rpc("cancelSparkJob", {"clusterId": CLUSTER_ID, "jobId": job_id}, iam_token)
+        logger.info("cancelSparkJob: operation=%s done=%s",
+                    operation.get("id") if isinstance(operation, dict) else None,
+                    operation.get("done") if isinstance(operation, dict) else None)
+
+        # подтверждение: джоба должна стать терминальной (CANCELLED)
+        _wait_jobs_gone(iam_token, [{"id": job_id}], CANCEL_WAIT_SEC, "teardown")
+        for job in _list_jobs(iam_token):
+            if job.get("id") == job_id:
+                logger.info("teardown confirmed: job %s status=%s", job_id, job.get("status"))
+                return
+        logger.warning("teardown: job %s not found in listSparkJobs (treated as gone)", job_id)
+    finally:
+        # cleanup выполнен при любом исходе; теперь честно отчитываемся о сбоях
+        _fail_if_siblings_failed(ti)
 
 
 default_args = {
