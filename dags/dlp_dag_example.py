@@ -2,7 +2,7 @@
 
 SQL sources: scripts/dlp_dag_example/*.sql in this repository.
 Worker authentication: https://yandex.cloud/ru/docs/managed-airflow/operations/get-iam-token
-The existing dlp_sdk uses the worker-network preprod endpoint on port 20197.
+The existing dlp_sdk_preprod uses the worker-network preprod endpoint on port 20197.
 """
 
 import logging
@@ -12,7 +12,7 @@ import pendulum
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-import dlp_sdk
+import dlp_sdk_preprod as dlp_sdk
 
 LOGGER = logging.getLogger(__name__)
 ORG_ID = "aatjshkh6qiphjpq10tv"
